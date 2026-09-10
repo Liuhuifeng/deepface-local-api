@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Face datastore artifacts
+*.pkl
+ds_*.pkl
+face_db/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
