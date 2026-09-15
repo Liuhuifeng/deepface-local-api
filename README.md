@@ -41,7 +41,9 @@ pip install -e .
 
 首次调用会下载 DeepFace 模型（识别 / 检测 / 表情）。TensorFlow 2.16+ 需要 `tf-keras`（已写入依赖）。修改依赖后请重启 API 进程。
 
-注册会先裁剪人脸再写入 `{userId}/{faceImageId}.jpg`，并调用官方 `DeepFace.find(refresh_database=True)` 把新图同步进 embeddings pkl。搜索使用 `refresh_database=False`，只读已有索引。
+注册会先裁剪人脸再写入 `{userId}/{faceImageId}.jpg`，并调用官方 `DeepFace.find(refresh_database=True)` 把新图同步进 embeddings pkl。
+
+搜索会先把登录照片裁成同目录下的 `{原文件名}_crop.jpg`（例如 `1.jpg` → `1_crop.jpg`），再用这张裁剪图 `find(refresh_database=False)`。返回的 `cropImagePath` 就是该文件。
 
 ## 作为 Python 库
 
@@ -69,7 +71,7 @@ python -m deepface_local_api --db-path ./face_db --port 8000
 | 方法 | 路径 | 请求 | data |
 | --- | --- | --- | --- |
 | POST | `/register` | `{ "imagePath", "userId" }` | `{ "userId", "faceImageId", "imagePath" }`（裁剪后的图） |
-| POST | `/search` | `{ "imagePath" }` | `{ "userId", "score", "cropImagePath" }` 或 `null`（`cropImagePath` 为库中裁剪图） |
+| POST | `/search` | `{ "imagePath" }` | `{ "userId", "score", "cropImagePath" }` 或 `null`（`1.jpg` → `1_crop.jpg`） |
 | POST | `/emotion` | `{ "imagePath" }` | `{ "emotion" }`（angry / disgust / fear / happy / sad / surprise / neutral） |
 
 ```bash

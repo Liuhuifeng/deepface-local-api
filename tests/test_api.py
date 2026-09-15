@@ -42,7 +42,7 @@ def test_register_search_emotion(tmp_path: Path, monkeypatch) -> None:
         lambda image_path: {
             "userId": "11",
             "score": 0.9,
-            "cropImagePath": str(tmp_path / "face_db" / "11" / "8f31c2.jpg"),
+            "cropImagePath": str(tmp_path / "query_crop.jpg"),
         },
     )
     monkeypatch.setattr(face_service, "emotion", lambda image_path: {"emotion": "happy"})
@@ -89,21 +89,30 @@ def test_register_refreshes_embeddings(tmp_path: Path, monkeypatch) -> None:
     assert Path(result["imagePath"]).is_file()
 
 
-def test_search_does_not_refresh_database(tmp_path: Path, monkeypatch) -> None:
+def test_search_crops_query_then_finds(tmp_path: Path, monkeypatch) -> None:
     photo = _touch_image(tmp_path / "query.jpg")
-    crop = tmp_path / "face_db" / "11" / "8f31c2.jpg"
-    _touch_image(crop)
+    registered = tmp_path / "face_db" / "11" / "8f31c2.jpg"
+    _touch_image(registered)
     face_service.face_store = FaceStore(tmp_path / "face_db")
     calls = []
 
+    monkeypatch.setattr(
+        face_service,
+        "_extract_face",
+        lambda image_path: np.zeros((32, 32, 3), dtype=np.uint8),
+    )
+
     def find(query, refresh_database, enforce_detection=None):
-        calls.append(refresh_database)
-        return [pd.DataFrame([{"identity": str(crop), "distance": 0.2, "threshold": 0.4}])]
+        calls.append((Path(query).name, refresh_database, enforce_detection))
+        return [pd.DataFrame([{"identity": str(registered), "distance": 0.2, "threshold": 0.4}])]
 
     monkeypatch.setattr(face_service, "_find", find)
     result = face_service.search(photo)
-    assert calls == [False]
-    assert result == {"userId": "11", "score": 0.5, "cropImagePath": str(crop)}
+    assert calls == [("query_crop.jpg", False, False)]
+    assert result["userId"] == "11"
+    assert result["score"] == 0.5
+    assert result["cropImagePath"] == str(tmp_path / "query_crop.jpg")
+    assert Path(result["cropImagePath"]).is_file()
 
 
 def test_search_not_found_returns_null_data(tmp_path: Path, monkeypatch) -> None:
@@ -165,3 +174,4 @@ def test_require_image_and_user_id(tmp_path: Path) -> None:
         store.next_crop_path("../etc")
     dest = store.next_crop_path("张三")
     assert dest.parent.name == "张三"
+    assert store.query_crop_path(tmp_path / "1.jpg") == tmp_path / "1_crop.jpg"

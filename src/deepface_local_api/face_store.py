@@ -24,6 +24,11 @@ class FaceStore:
         dest.parent.mkdir(parents=True, exist_ok=True)
         return dest
 
+    @staticmethod
+    def query_crop_path(image_path: str | Path) -> Path:
+        path = Path(image_path)
+        return path.with_name(f"{path.stem}_crop{path.suffix}")
+
     def image_count(self) -> int:
         return sum(
             1

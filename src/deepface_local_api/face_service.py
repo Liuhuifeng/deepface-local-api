@@ -67,35 +67,35 @@ class FaceService:
         }
 
     def search(self, image_path: str) -> dict | None:
-        query = str(self.face_store.require_image(image_path))
-        if self.face_store.image_count() == 0:
-            return None
-
+        query_path = self.face_store.require_image(image_path)
+        crop_path = self.face_store.query_crop_path(query_path)
         with self._lock:
             try:
-                dataframes = self._find(query, refresh_database=False)
+                face = self._extract_face(str(query_path))
+                _write_face_jpg(crop_path, face)
+                if self.face_store.image_count() == 0:
+                    return None
+                dataframes = self._find(
+                    str(crop_path),
+                    refresh_database=False,
+                    enforce_detection=False,
+                )
             except Exception as exc:
                 if _is_empty_store(exc):
                     return None
                 if _is_face_not_detected(exc):
-                    raise FaceNotDetectedError(f"No face detected in {query}") from exc
+                    raise FaceNotDetectedError(f"No face detected in {query_path}") from exc
                 raise
 
-        if not dataframes or len(dataframes[0]) == 0:
+        matched = _best_match(dataframes)
+        if matched is None:
             return None
 
-        row = dataframes[0].iloc[0]
-        crop_image_path = str(row["identity"])
-        distance = float(row["distance"])
-        threshold = float(row["threshold"])
-        if distance > threshold:
-            return None
-
-        score = max(0.0, min(1.0, 1.0 - distance / threshold)) if threshold else 1.0
+        user_id, score = matched
         return {
-            "userId": Path(crop_image_path).parent.name,
+            "userId": user_id,
             "score": score,
-            "cropImagePath": crop_image_path,
+            "cropImagePath": str(crop_path),
         }
 
     def emotion(self, image_path: str) -> dict:
@@ -157,6 +157,19 @@ class FaceService:
             silent=True,
             k=1,
         )
+
+
+def _best_match(dataframes) -> tuple[str, float] | None:
+    if not dataframes or len(dataframes[0]) == 0:
+        return None
+    row = dataframes[0].iloc[0]
+    identity_path = str(row["identity"])
+    distance = float(row["distance"])
+    threshold = float(row["threshold"])
+    if distance > threshold:
+        return None
+    score = max(0.0, min(1.0, 1.0 - distance / threshold)) if threshold else 1.0
+    return Path(identity_path).parent.name, score
 
 
 def _write_face_jpg(path: Path, face) -> None:
