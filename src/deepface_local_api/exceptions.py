@@ -1,22 +1,14 @@
-class FaceAPIError(Exception):
-    """Base error for the local face API."""
+class FaceStoreError(Exception):
+    pass
 
 
-class StoreNotInitializedError(FaceAPIError):
-    """Raised when the face directory has not been initialized."""
+class ImageNotFoundError(FaceStoreError):
+    pass
 
 
-class ImageNotFoundError(FaceAPIError):
-    """Raised when a local image path does not exist."""
+class InvalidUserIdError(FaceStoreError):
+    pass
 
 
-class InvalidIdentityError(FaceAPIError):
-    """Raised when a face identity name is not a valid directory name."""
-
-
-class EmptyFaceStoreError(FaceAPIError):
-    """Raised when 1:N search is requested against an empty directory store."""
-
-
-class SourceNotFoundError(FaceAPIError):
-    """Raised when InitFace source directory does not exist."""
+class FaceNotDetectedError(FaceStoreError):
+    pass

@@ -1,15 +1,7 @@
-from deepface_local_api import tfcompat as _tfcompat  # noqa: F401
-from deepface_local_api.app import app, create_app
-from deepface_local_api.service import FaceRecognitionService, FaceService
-from deepface_local_api.store import DirectoryFaceStore
-from deepface_local_api.identity import IdentityKey
+import deepface_local_api.tfcompat  # noqa: F401
+from deepface_local_api.app import app
+from deepface_local_api.face_service import FaceService
+from deepface_local_api.face_store import FaceStore
 
-__all__ = [
-    "FaceService",
-    "FaceRecognitionService",
-    "DirectoryFaceStore",
-    "IdentityKey",
-    "app",
-    "create_app",
-]
+__all__ = ["FaceService", "FaceStore", "app"]
 __version__ = "0.1.0"

@@ -1,23 +1,24 @@
 from __future__ import annotations
 
 import argparse
+import os
+from pathlib import Path
 
 import uvicorn
-
-from deepface_local_api.config import settings
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the DeepFace local FastAPI server")
-    parser.add_argument("--host", default=settings.host)
-    parser.add_argument("--port", type=int, default=settings.port)
-    parser.add_argument("--db-path", default=None, help="Initialize directory face store on startup")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--db-path",
+        required=True,
+        help="Face db directory: {db_path}/{userId}/{faceImageId}.jpg",
+    )
     args = parser.parse_args()
 
-    if args.db_path:
-        from deepface_local_api.app import service
-
-        service.init_store(args.db_path)
+    os.environ["FACE_DB_PATH"] = str(Path(args.db_path).expanduser().resolve())
 
     uvicorn.run(
         "deepface_local_api.app:app",

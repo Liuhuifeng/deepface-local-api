@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,8 +13,7 @@ class Settings(BaseSettings):
         protected_namespaces=(),
     )
 
-    db_path: Optional[Path] = Field(default=None, description="Directory-based face datastore root")
-    # model_name: str = "VGG-Face"
+    db_path: Path = Field(default=Path("face_db"))
     model_name: str = "ArcFace"
     detector_backend: str = "opencv"
     distance_metric: str = "cosine"
