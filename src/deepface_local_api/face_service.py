@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 import threading
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import cv2
 import numpy as np
@@ -13,6 +15,7 @@ from deepface_local_api.exceptions import FaceNotDetectedError
 from deepface_local_api.face_store import FaceStore
 
 EMOTIONS = ("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
+logger = logging.getLogger(__name__)
 
 _deepface = None
 
@@ -49,11 +52,17 @@ class FaceService:
 
     def register(self, image_path: str, user_id: str) -> dict:
         path = str(self.face_store.require_image(image_path))
+        return self._register_image(path, user_id)
+
+    def register_frame(self, frame: np.ndarray, user_id: str) -> dict:
+        return self._register_image(_require_frame(frame), user_id)
+
+    def _register_image(self, image: Any, user_id: str) -> dict:
         user_id = self.face_store.check_user_id(user_id)
         dest = self.face_store.next_crop_path(user_id)
         with self._lock:
             try:
-                face = self._extract_face(path)
+                face = self._extract_face(image)
                 _write_face_jpg(dest, face)
                 # Official: find(refresh_database=True) adds new files to the embeddings pkl.
                 self._find(str(dest), refresh_database=True, enforce_detection=False)
@@ -67,36 +76,48 @@ class FaceService:
         }
 
     def search(self, image_path: str) -> dict | None:
-        query_path = self.face_store.require_image(image_path)
-        crop_path = self.face_store.query_crop_path(query_path)
-        with self._lock:
-            try:
-                face = self._extract_face(str(query_path))
-                _write_face_jpg(crop_path, face)
+        image = str(self.face_store.require_image(image_path))
+        return self._search_image(image, image_path)
+
+    def search_frame(self, frame: np.ndarray) -> dict | None:
+        return self._search_image(_require_frame(frame), "<camera-frame>")
+
+    def _search_image(self, image: Any, image_label: str) -> dict | None:
+        started = time.perf_counter()
+        lock_started = time.perf_counter()
+        try:
+            with self._lock:
+                lock_wait = time.perf_counter() - lock_started
                 if self.face_store.image_count() == 0:
                     return None
-                dataframes = self._find(
-                    str(crop_path),
-                    refresh_database=False,
-                    enforce_detection=False,
-                )
-            except Exception as exc:
-                if _is_empty_store(exc):
-                    return None
-                if _is_face_not_detected(exc):
-                    raise FaceNotDetectedError(f"No face detected in {query_path}") from exc
-                raise
+                find_started = time.perf_counter()
+                try:
+                    dataframes = self._find(
+                        image,
+                        refresh_database=False,
+                        enforce_detection=self.settings.enforce_detection,
+                    )
+                except Exception as exc:
+                    if _is_empty_store(exc):
+                        return None
+                    if _is_face_not_detected(exc):
+                        raise FaceNotDetectedError(f"No face detected in {image_label}") from exc
+                    raise
+                find_time = time.perf_counter() - find_started
 
-        matched = _best_match(dataframes)
-        if matched is None:
-            return None
-
-        user_id, score = matched
-        return {
-            "userId": user_id,
-            "score": score,
-            "cropImagePath": str(crop_path),
-        }
+            matched = _best_match(dataframes)
+            if matched is None:
+                return None
+            user_id, distance, threshold = matched
+            return {"userId": user_id, "distance": distance, "threshold": threshold}
+        finally:
+            logger.info(
+                "search timing image=%s lock_wait=%.1fms find=%.1fms total=%.1fms",
+                image_label,
+                locals().get("lock_wait", 0.0) * 1000,
+                locals().get("find_time", 0.0) * 1000,
+                (time.perf_counter() - started) * 1000,
+            )
 
     def emotion(self, image_path: str) -> dict:
         query = str(self.face_store.require_image(image_path))
@@ -121,25 +142,25 @@ class FaceService:
             raise ValueError(f"Unknown emotion: {name}")
         return {"emotion": name}
 
-    def _extract_face(self, image_path: str):
+    def _extract_face(self, image: Any):
         try:
             faces = _load_deepface().extract_faces(
-                img_path=image_path,
+                img_path=image,
                 detector_backend=self.settings.detector_backend,
                 enforce_detection=self.settings.enforce_detection,
                 align=self.settings.align,
             )
         except Exception as exc:
             if _is_face_not_detected(exc):
-                raise FaceNotDetectedError(f"No face detected in {image_path}") from exc
+                raise FaceNotDetectedError("No face detected in input image") from exc
             raise
         if not faces:
-            raise FaceNotDetectedError(f"No face detected in {image_path}")
+            raise FaceNotDetectedError("No face detected in input image")
         return faces[0]["face"]
 
     def _find(
         self,
-        query: str,
+        query: Any,
         refresh_database: bool,
         enforce_detection: bool | None = None,
     ):
@@ -159,7 +180,7 @@ class FaceService:
         )
 
 
-def _best_match(dataframes) -> tuple[str, float] | None:
+def _best_match(dataframes) -> tuple[str, float, float] | None:
     if not dataframes or len(dataframes[0]) == 0:
         return None
     row = dataframes[0].iloc[0]
@@ -168,8 +189,7 @@ def _best_match(dataframes) -> tuple[str, float] | None:
     threshold = float(row["threshold"])
     if distance > threshold:
         return None
-    score = max(0.0, min(1.0, 1.0 - distance / threshold)) if threshold else 1.0
-    return Path(identity_path).parent.name, score
+    return Path(identity_path).parent.name, distance, threshold
 
 
 def _write_face_jpg(path: Path, face) -> None:
@@ -180,6 +200,12 @@ def _write_face_jpg(path: Path, face) -> None:
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     if not cv2.imwrite(str(path), image):
         raise IOError(f"Failed to save cropped face: {path}")
+
+
+def _require_frame(frame: np.ndarray) -> np.ndarray:
+    if not isinstance(frame, np.ndarray) or frame.size == 0:
+        raise ValueError("Camera frame is empty")
+    return frame
 
 
 def _is_face_not_detected(exc: Exception) -> bool:

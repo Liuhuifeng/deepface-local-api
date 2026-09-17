@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     db_path: Path = Field(default=Path("face_db"))
     model_name: str = "ArcFace"
-    detector_backend: str = "opencv"
+    detector_backend: str = "retinaface"
     distance_metric: str = "cosine"
     enforce_detection: bool = True
     align: bool = True
